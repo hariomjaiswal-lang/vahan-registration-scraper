@@ -13,7 +13,12 @@ portal:
   report_timeout: 120
   # Retry policy from the PDD "Business Exceptions" table.
   navigation_retries: 3
-  captcha_retries: 5
+  # PDD says "Retry Captcha for 5 times" - raised to 7 by deliberate business
+  # decision (2026-10-01) after measuring ~51% per-attempt OCR accuracy live:
+  # 5 retries -> ~2.8% of items still fail outright; 7 -> ~0.7% (math in
+  # chat history). A documented deviation from the PDD, not an oversight -
+  # flag it to the client/manager alongside this file.
+  captcha_retries: 7
   report_retries: 2
 
 captcha:

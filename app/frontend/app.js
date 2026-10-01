@@ -289,17 +289,21 @@ function RunRow({run, sel, onSelect}) {
       h('span', null, run.progress_done + ' / ' + (run.progress_total || '?'))));
 }
 
-function RunsCard({runs, sel, onSelect}) {
+function RunsCard({runs, sel, onSelect, filterFlow, onClearFilter}) {
+  const shown = filterFlow ? runs.filter(r => r.flow === filterFlow) : runs;
   return h('div', {className: 'card'},
     h('div', {className: 'hd'},
-      h('h2', null, 'Runs'),
-      runs.length ? h('span', {className: 'count'}, runs.length) : null),
+      h('h2', null, filterFlow ? flowName(filterFlow) + ' history' : 'Runs'),
+      shown.length ? h('span', {className: 'count'}, shown.length) : null,
+      filterFlow && h('button', {className: 'lnk', style: {marginLeft: 'auto'}, onClick: onClearFilter}, 'Show all')),
     h('div', {className: 'bd'},
       h('div', {className: 'runs'},
-        runs.map(r => h(RunRow, {key: r.id, run: r, sel: r.id === sel, onSelect})))));
+        shown.length
+          ? shown.map(r => h(RunRow, {key: r.id, run: r, sel: r.id === sel, onSelect}))
+          : h('p', {className: 'hint'}, 'No runs yet for this flow.'))));
 }
 
-function ScheduleRow({flowId, sched}) {
+function ScheduleRow({flowId, sched, onViewHistory}) {
   const name = flowName(flowId);
   if (!sched || !sched.configured) {
     return h('div', {className: 'schedRow off'},
@@ -307,7 +311,11 @@ function ScheduleRow({flowId, sched}) {
       h('span', {className: 'schedState'}, 'Not scheduled'));
   }
   const running = sched.status === 'Running';
-  return h('div', {className: 'schedRow'},
+  return h('button', {
+    type: 'button', className: 'schedRow clickable',
+    onClick: () => onViewHistory(flowId),
+    title: 'Click to see this flow\'s past runs',
+  },
     h('div', {className: 'r1'},
       h('span', {className: 'name'}, name),
       h('span', {className: 'schedState ' + (running ? 'live' : '')}, sched.status || '—')),
@@ -320,14 +328,14 @@ function ScheduleRow({flowId, sched}) {
       sched.last_result != null ? (sched.last_result === '0' ? ' (ok)' : ' (result ' + sched.last_result + ')') : ''));
 }
 
-function ScheduleCard() {
+function ScheduleCard({onViewHistory}) {
   const data = usePoll(API.schedules, 30000, []);
   const flowIds = ['flow1_state_monthwise', 'flow2_state_fuelwise', 'flow3_rto_monthwise', 'flow4_rto_fuelwise'];
   return h('div', {className: 'card'},
     h('div', {className: 'hd'}, h('h2', null, 'Scheduled runs')),
     h('div', {className: 'bd'},
       h('div', {className: 'schedList'},
-        flowIds.map(id => h(ScheduleRow, {key: id, flowId: id, sched: data && data[id]})))));
+        flowIds.map(id => h(ScheduleRow, {key: id, flowId: id, sched: data && data[id], onViewHistory})))));
 }
 
 function Captcha({run}) {
@@ -447,15 +455,23 @@ function DetailPane({id}) {
 
 function App() {
   const [sel, setSel] = useState(null);
+  const [filterFlow, setFilterFlow] = useState(null);
   const runs = usePoll(API.runs, 2000, []) || [];
   useEffect(() => { if (!sel && runs.length) setSel(runs[0].id); }, [runs.length]);
+
+  function viewHistory(flowId) {
+    setFilterFlow(flowId);
+    const first = runs.find(r => r.flow === flowId);
+    if (first) setSel(first.id);
+  }
+
   return h('div', {className: 'app'},
     h(Header),
     h('div', {className: 'body'},
       h('div', {className: 'col'},
         h(StartCard, {onStarted: setSel}),
-        h(ScheduleCard),
-        h(RunsCard, {runs, sel, onSelect: setSel})),
+        h(ScheduleCard, {onViewHistory: viewHistory}),
+        h(RunsCard, {runs, sel, onSelect: setSel, filterFlow, onClearFilter: () => setFilterFlow(null)})),
       h(DetailPane, {id: sel})));
 }
 

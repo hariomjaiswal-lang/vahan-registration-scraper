@@ -289,17 +289,8 @@ def api_download(run_id: str, which: str = "zip"):
 
 
 # ---------------------------------------------------------------- static frontend
-# Optional convenience: when VAHAN_SERVE_FRONTEND is true (the default) this one
-# server hosts the dashboard too. Set it false to run the frontend on its own
-# server (python -m tools.serve_frontend) - the API then only speaks JSON.
-if settings.serve_frontend and FRONTEND_DIR.is_dir():
-    # Mounted last so /api/* routes above win; html=True serves index.html at "/".
+# Monolithic: one process serves both the JSON API (/api/*) and the dashboard
+# (everything else) - always, not optionally. Mounted last so /api/* routes
+# above take priority; html=True serves index.html at "/".
+if FRONTEND_DIR.is_dir():
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
-else:
-    @app.get("/")
-    def root():
-        return {
-            "service": "vahan-scraper-api",
-            "docs": "/docs",
-            "frontend": "served separately - run `python -m tools.serve_frontend`",
-        }

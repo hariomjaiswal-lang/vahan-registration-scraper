@@ -1,12 +1,16 @@
-"""Flow 2 - Vahan_StateFuelwise.
+"""Flow 3 - Vahan_RTO-Monthwise.
 
-For every State/UT and every month Jan..current: Y-Axis = Maker, X-Axis = Fuel,
-period = "1 Month Flexible" set to that whole month. One Excel per State-month
--> rename -> zip.
+For every State/UT and every RTO within it: Y-Axis = Maker, X-Axis = Month-wise,
+Calendar Year (same report shape as Flow 1, just filtered down to one RTO at a
+time). One Excel per State-RTO -> rename -> zip.
 
-Reconciliation (PDD Step 8.2): per State and bucket, the sum of the Flow 2
-monthly totals (YTD) must equal the Flow 1 (StateMonthwise) state total. Needs a
-Flow 1 output folder - auto-discovered, or passed as `flow1_dir`.
+Total RTOs vary per state and are only known once that state is selected, so
+`run.progress_total` grows as each state's RTO list is discovered (kept ahead of
+`progress_done`, never behind).
+
+Reconciliation (PDD Step 8.2): per State and bucket, the sum of the Flow 3
+per-RTO totals must equal the Flow 1 state total - same check as Flow 2,
+just summed over RTOs instead of months (validation.reconcile_flow2 is generic).
 """
 from __future__ import annotations
 
@@ -19,38 +23,22 @@ from backend.flows._resilience import assert_scope, find_flow1_dir, note_failure
 from backend.portal import CaptchaExhausted, PortalError, VahanPortal
 from backend.registry import Run, cancel_requested
 
-_MON = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+_NO_LIMIT = {"", "all", "all states", "*", "36"}
 
 
-def _months_arg(value, current_month: int) -> list[int]:
-    """Accept ['JAN','FEB'] / [1,2] / None -> list of 1-based month numbers."""
-    if not value:
-        return list(range(1, current_month + 1))
-    out: list[int] = []
-    for v in value:
-        s = str(v).strip().upper()
-        if s.isdigit():
-            out.append(int(s))
-        elif s[:3] in _MON:
-            out.append(_MON.index(s[:3]) + 1)
-    return sorted(set(m for m in out if 1 <= m <= 12))
-
-
-def run_flow2(run: Run, cfg: dict) -> None:
+def run_flow3(run: Run, cfg: dict) -> None:
     config.ensure_dirs()
-    now = time.localtime()
-    year = int((run.params or {}).get("year") or now.tm_year)
-    months = _months_arg((run.params or {}).get("months"), now.tm_mon if year == now.tm_year else 12)
-
-    out_root = Path(cfg["paths"]["output_dir"]) / f"{run.id}_flow2_{packaging.timestamp_slug()}"
+    year = str(time.localtime().tm_year)
+    out_root = Path(cfg["paths"]["output_dir"]) / f"{run.id}_flow3_{packaging.timestamp_slug()}"
     files_dir = out_root / "files"
     files_dir.mkdir(parents=True, exist_ok=True)
 
     params = run.params or {}
     only = params.get("states") or None
-    _NO_LIMIT = {"", "all", "all states", "*", "36"}
     if only:
         only = [s for s in only if s.strip().lower() not in _NO_LIMIT] or None
+    rto_only = params.get("rtos") or None  # optional subset of RTO codes, for smoke tests
+    max_rtos_per_state = params.get("max_rtos_per_state")  # optional int, for smoke tests
     skip_recon = bool(params.get("skip_reconciliation"))
     flow1_dir = params.get("flow1_dir")
 
@@ -59,6 +47,7 @@ def run_flow2(run: Run, cfg: dict) -> None:
     failed: list[str] = []
     run.started = time.time()
     run.state = "running"
+    run.progress_total = 0
 
     aborted = False
     with VahanPortal(cfg, run) as portal:
@@ -66,8 +55,8 @@ def run_flow2(run: Run, cfg: dict) -> None:
         portal.open_report_page()
 
         def reassert() -> None:
-            portal.apply_common_filters(calendar_year=False)
-            portal.set_axes_maker_fuel()
+            portal.apply_common_filters(calendar_year=True)
+            portal.set_axes_maker_monthwise()
 
         reassert()
 
@@ -79,8 +68,7 @@ def run_flow2(run: Run, cfg: dict) -> None:
 
             def _m(s: dict) -> bool:
                 code, name = s["code"].lower(), f" {s['name'].lower()} "
-                return any(k == code or k.strip() == name.strip()
-                           or name.startswith(f" {k} ") or f" {k} " in name for k in keys)
+                return any(k == code or name.startswith(f" {k} ") or f" {k} " in name for k in keys)
 
             states = [s for s in all_states if _m(s)]
             if not states:
@@ -88,23 +76,52 @@ def run_flow2(run: Run, cfg: dict) -> None:
                     f"State filter {only!r} matched nothing. Valid codes: "
                     + ", ".join(s["code"] for s in all_states)
                 )
-        run.log(f"States: {[s['code'] for s in states]}  Months: {[_MON[m-1] for m in months]}")
-        run.progress_total = len(states) * len(months)
+        run.log(f"States: {[s['code'] for s in states]}")
         # See flow1.py: a long-lived session on this portal gets measurably
         # worse at solving its own captchas the longer it runs. Proactively
         # reopening the page every REFRESH_EVERY items resets that.
         REFRESH_EVERY = 12
         item_count = 0
 
+        def attempt_item(st: dict, rto: dict) -> tuple[Path | None, Exception | None]:
+            code, name = st["code"], st["name"]
+            dest = files_dir / f"Monthwise_{year}-{code}-{rto['code']}.xlsx"
+            try:
+                portal.select_only_state(code)
+                portal.select_only_rto(rto["value"])
+                portal.solve_captcha_and_apply(
+                    reassert=lambda c=code, rv=rto["value"]: (
+                        reassert(), portal.select_only_state(c), portal.select_only_rto(rv),
+                    )
+                )
+                # The RTO filter can silently fail to apply (e.g. right after a
+                # page-reopen recovery) - the report then renders for the whole
+                # state instead, no error anywhere. Refuse to download that.
+                assert_scope(portal.report_header_text(), ["RTO (", rto["code"]], f"{code} {rto['code']}")
+                portal.download_excel(dest)
+                return dest, None
+            except Exception as e:  # noqa: BLE001 - never let one item kill the whole run
+                return None, e
+
+        failed_items: list[tuple[dict, dict]] = []
         for st in states:
             if cancel_requested(run.id):
                 run.state = "cancelled"
                 return
             code, name = st["code"], st["name"]
-            per_state_files[code] = []
             portal.select_only_state(code)
+            rtos = portal.rto_options()
+            if rto_only:
+                wanted = {r.strip().upper() for r in rto_only}
+                rtos = [r for r in rtos if r["code"].upper() in wanted]
+            if max_rtos_per_state:
+                rtos = rtos[: int(max_rtos_per_state)]
+            run.log(f"{name} ({code}): {len(rtos)} RTOs")
+            run.progress_total += len(rtos)
+            per_state_files[code] = []
             consecutive_fail = 0
-            for m in months:
+
+            for rto in rtos:
                 if cancel_requested(run.id):
                     run.state = "cancelled"
                     return
@@ -113,33 +130,53 @@ def run_flow2(run: Run, cfg: dict) -> None:
                     portal.open_report_page()
                     reassert()
                     portal.select_only_state(code)
+                    portal.select_only_rto(rto["value"])
                 item_count += 1
-                mon = _MON[m - 1]
-                run.current_item = f"{name} ({code}) - {mon} {year}"
-                dest = files_dir / f"Fuelwise_{year}-{mon}-{code}.xlsx"
-                try:
-                    portal.set_month_period(year, m)
-                    portal.solve_captcha_and_apply(
-                        reassert=lambda c=code, mm=m: (
-                            reassert(), portal.select_only_state(c),
-                            portal.set_month_period(year, mm),
-                        )
-                    )
-                    assert_scope(portal.report_header_text(), [name], f"{name} {mon}")
-                    portal.download_excel(dest)
+                run.current_item = f"{name} ({code}) - {rto['code']}"
+                dest, err = attempt_item(st, rto)
+                if dest:
                     succeeded.append(dest)
                     per_state_files[code].append(dest)
-                    run.log(f"OK  {code} {mon} -> {dest.name}")
+                    run.log(f"OK  {code} {rto['code']} -> {dest.name}")
                     consecutive_fail = note_success(consecutive_fail)
-                except Exception as e:  # noqa: BLE001 - never let one item kill the whole run
-                    failed.append(f"{code} {mon}: {e}")
-                    run.log(f"FAIL {code} {mon}: {e}", "error")
+                else:
+                    failed_items.append((st, rto))
+                    run.log(f"FAIL {code} {rto['code']}: {err}", "error")
                     consecutive_fail = note_failure(
                         portal, run, consecutive_fail,
                         on_recover=lambda c=code: (reassert(), portal.select_only_state(c)),
                     )
-                finally:
-                    run.progress_done += 1
+                run.progress_done += 1
+
+        # ---- Self-heal: see flow1.py - a captcha miss is often just bad luck
+        # on that one attempt, not a persistently broken item.
+        EXTRA_PASSES = 3
+        for pass_num in range(1, EXTRA_PASSES + 1):
+            if not failed_items or cancel_requested(run.id):
+                break
+            run.log(
+                f"Self-heal pass {pass_num}/{EXTRA_PASSES}: retrying {len(failed_items)} "
+                f"failed item(s)", "info",
+            )
+            portal.open_report_page()
+            reassert()
+            still_failed = []
+            for st, rto in failed_items:
+                if cancel_requested(run.id):
+                    still_failed.append((st, rto))
+                    continue
+                dest, err = attempt_item(st, rto)
+                if dest:
+                    succeeded.append(dest)
+                    per_state_files[st["code"]].append(dest)
+                    run.log(f"OK (self-heal {pass_num})  {st['code']} {rto['code']} -> {dest.name}")
+                else:
+                    still_failed.append((st, rto))
+                    run.log(f"FAIL (self-heal {pass_num}) {st['code']} {rto['code']}: {err}", "warn")
+            failed_items = still_failed
+
+        for st, rto in failed_items:
+            failed.append(f"{st['code']} {rto['code']}: failed even after {EXTRA_PASSES} self-heal passes")
       except Exception as e:  # noqa: BLE001 - package whatever succeeded, never lose the work
         aborted = True
         failed.append(f"RUN STOPPED EARLY: {e}")
@@ -148,26 +185,24 @@ def run_flow2(run: Run, cfg: dict) -> None:
 
     # ---- Stage 8: zip + reconcile + summary (always runs, even after aborted) ----
     run.current_item = "packaging"
-    zip_path = out_root / f"Flow2_StateFuelwise_{year}_{packaging.timestamp_slug()}.zip"
+    zip_path = out_root / f"Flow3_RTOMonthwise_{year}_{packaging.timestamp_slug()}.zip"
     packaging.make_zip(succeeded, zip_path)
 
-    full_ytd = months == list(range(1, (now.tm_mon if year == now.tm_year else 12) + 1))
+    full_rtos = not rto_only and not max_rtos_per_state  # a limited RTO set can't reconcile
     reconciliation = {"ok": None, "rows": [], "file_errors": [], "skipped": True}
     f1_dir = Path(flow1_dir) if flow1_dir else find_flow1_dir(cfg["paths"]["output_dir"])
     recon_label = "skipped"
 
     if skip_recon:
         recon_label = "skipped"
-    elif not full_ytd:
-        recon_label = "n/a (partial months)"
-        run.log("Reconciliation N/A - not a full Jan..current run", "info")
+    elif not full_rtos:
+        recon_label = "n/a (partial RTOs)"
+        run.log("Reconciliation N/A - not all RTOs were pulled for the selected states", "info")
     elif not f1_dir or not f1_dir.is_dir():
         recon_label = "n/a (no Flow 1 output)"
         run.log("Reconciliation N/A - run Flow 1 first (or pass flow1_dir)", "warn")
     elif succeeded:
-        flow1_by_state = {
-            code: f1_dir / f"Monthwise_{year}-{code}.xlsx" for code in per_state_files
-        }
+        flow1_by_state = {code: f1_dir / f"Monthwise_{year}-{code}.xlsx" for code in per_state_files}
         try:
             reconciliation = validation.reconcile_flow2(
                 {k: v for k, v in per_state_files.items() if v},
@@ -188,10 +223,10 @@ def run_flow2(run: Run, cfg: dict) -> None:
     reconciliation["label"] = recon_label
 
     run.finished = time.time()
-    summary_path = out_root / f"Flow2_Summary_{packaging.timestamp_slug()}.xlsx"
+    summary_path = out_root / f"Flow3_Summary_{packaging.timestamp_slug()}.xlsx"
     packaging.write_summary_xlsx(
         summary_path,
-        flow="Flow 2 - Vahan_StateFuelwise",
+        flow="Flow 3 - Vahan_RTO-Monthwise",
         run_id=run.id,
         started=run.started,
         finished=run.finished,
@@ -199,7 +234,7 @@ def run_flow2(run: Run, cfg: dict) -> None:
         succeeded=len(succeeded),
         failed_items=failed,
         reconciliation=reconciliation,
-        recon_columns=("State", "Bucket", "Flow 2 YTD", "Flow 1 Total", "Delta", "Match"),
+        recon_columns=("State", "Bucket", "Flow 3 (sum of RTOs)", "Flow 1 Total", "Delta", "Match"),
         recon_row_keys=("state", "bucket", "flow2_ytd", "flow1_total", "delta", "match"),
     )
     cloud_storage.upload_file(zip_path, f"{run.id}/{zip_path.name}")
@@ -211,16 +246,17 @@ def run_flow2(run: Run, cfg: dict) -> None:
         "summary": str(summary_path),
         "succeeded": len(succeeded),
         "failed": failed,
-        "partial_run": bool(only) or not full_ytd,
+        "partial_run": bool(only) or not full_rtos,
         "reconciliation_ok": reconciliation.get("ok"),
         "reconciliation_label": recon_label,
         "reconciliation_rows": reconciliation.get("rows", []),
         "flow1_dir": str(f1_dir) if f1_dir else None,
+        "total_rtos": run.progress_total,
         "aborted": aborted,
     }
     send_run_summary(
         run,
-        flow_title="Flow 2 - Vahan_StateFuelwise",
+        flow_title="Flow 3 - Vahan_RTO-Monthwise",
         zip_path=zip_path,
         summary_path=summary_path,
         recon_label=recon_label,
@@ -230,7 +266,7 @@ def run_flow2(run: Run, cfg: dict) -> None:
     run.state = "done"
     run.current_item = ""
     run.log(
-        f"Flow 2 complete: {len(succeeded)} files, {len(failed)} failures"
+        f"Flow 3 complete: {len(succeeded)} files, {len(failed)} failures"
         + (" (run stopped early - see log)" if aborted else "")
         + f". Zip: {zip_path.name}"
     )

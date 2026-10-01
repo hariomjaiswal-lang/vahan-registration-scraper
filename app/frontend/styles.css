@@ -128,11 +128,11 @@ label.fld > span{
 }
 .mselSearch:focus{outline:none; border-color:var(--sky);}
 .mselActions{display:flex; gap:12px; padding:0 2px 6px;}
-.mselActions .lnk{
+.lnk{
   background:none; border:none; padding:0; font-size:11px; font-weight:600;
-  color:var(--sky-600); cursor:pointer;
+  color:var(--sky-600); cursor:pointer; font-family:inherit;
 }
-.mselActions .lnk:hover{text-decoration:underline;}
+.lnk:hover{text-decoration:underline;}
 .mselList{max-height:220px; overflow-y:auto;}
 .mselGroup{
   font-size:10px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
@@ -193,9 +193,15 @@ label.fld > span{
 /* ---------- schedule card ---------- */
 .schedList{display:flex; flex-direction:column; gap:9px;}
 .schedRow{
+  display:block; width:100%; text-align:left; font:inherit; color:inherit;
   padding:10px 12px; background:var(--panel-2); border:1px solid var(--line);
-  border-radius:11px;
+  border-radius:11px; cursor:default;
 }
+.schedRow.clickable{
+  cursor:pointer; transition:border-color .15s, background .15s;
+}
+.schedRow.clickable:hover{border-color:var(--sky-100); background:#fff;}
+.schedRow.clickable:focus-visible{outline:2px solid var(--sky); outline-offset:2px;}
 .schedRow.off{
   display:flex; justify-content:space-between; align-items:center; opacity:.65;
 }

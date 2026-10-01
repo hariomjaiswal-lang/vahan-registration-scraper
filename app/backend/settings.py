@@ -49,21 +49,13 @@ class SMTP:
 
 @dataclass
 class Settings:
-    # ---- API server ----
+    # Monolithic: one process, one port - serves the JSON API (/api/*) and the
+    # dashboard (everything else) together, always. No separate frontend
+    # server/port to configure.
     host: str = field(default_factory=lambda: os.getenv("VAHAN_HOST", "127.0.0.1"))
     port: int = field(default_factory=lambda: int(os.getenv("VAHAN_PORT", "8000")))
     reload: bool = field(default_factory=lambda: _bool("VAHAN_RELOAD", False))
     cors_origins: list[str] = field(default_factory=lambda: _list("VAHAN_CORS_ORIGINS", ["*"]))
-    # When false, the API does NOT serve the frontend - run it separately with
-    # `python -m tools.serve_frontend`.
-    serve_frontend: bool = field(default_factory=lambda: _bool("VAHAN_SERVE_FRONTEND", True))
-
-    # ---- standalone frontend server (tools/serve_frontend.py) ----
-    frontend_host: str = field(default_factory=lambda: os.getenv("FRONTEND_HOST", "127.0.0.1"))
-    frontend_port: int = field(default_factory=lambda: int(os.getenv("FRONTEND_PORT", "5173")))
-    # If set, the frontend server injects this as API_BASE (overrides config.js),
-    # e.g. "http://localhost:8000".
-    api_base: str = field(default_factory=lambda: os.getenv("VAHAN_API_BASE", ""))
 
     smtp: SMTP = field(default_factory=SMTP)
 

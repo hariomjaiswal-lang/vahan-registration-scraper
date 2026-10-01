@@ -94,15 +94,7 @@ def run_flow1(run: Run, cfg: dict) -> None:
         # start.
         REFRESH_EVERY = 12
 
-        for i, st in enumerate(states):
-            if cancel_requested(run.id):
-                run.log("Cancellation requested - stopping", "warn")
-                run.state = "cancelled"
-                return
-            if i > 0 and i % REFRESH_EVERY == 0:
-                run.log(f"Refreshing portal session after {i} states (preventive)", "info")
-                portal.open_report_page()
-                reassert()
+        def attempt_state(st: dict) -> tuple[Path | None, Exception | None]:
             code, name = st["code"], st["name"]
             run.current_item = f"{name} ({code})"
             dest = files_dir / f"Monthwise_{year}-{code}.xlsx"
@@ -113,15 +105,61 @@ def run_flow1(run: Run, cfg: dict) -> None:
                 )
                 assert_scope(portal.report_header_text(), [name], name)
                 portal.download_excel(dest)
-                succeeded.append(dest)
-                run.log(f"OK  {name} -> {dest.name}")
-                consecutive_fail = note_success(consecutive_fail)
+                return dest, None
             except Exception as e:  # noqa: BLE001 - never let one item kill the whole run
-                failed.append(f"{name} ({code}): {e}")
-                run.log(f"FAIL {name}: {e}", "error")
+                return None, e
+
+        failed_states: list[dict] = []
+        for i, st in enumerate(states):
+            if cancel_requested(run.id):
+                run.log("Cancellation requested - stopping", "warn")
+                run.state = "cancelled"
+                return
+            if i > 0 and i % REFRESH_EVERY == 0:
+                run.log(f"Refreshing portal session after {i} states (preventive)", "info")
+                portal.open_report_page()
+                reassert()
+            dest, err = attempt_state(st)
+            if dest:
+                succeeded.append(dest)
+                run.log(f"OK  {st['name']} -> {dest.name}")
+                consecutive_fail = note_success(consecutive_fail)
+            else:
+                failed_states.append(st)
+                run.log(f"FAIL {st['name']}: {err}", "error")
                 consecutive_fail = note_failure(portal, run, consecutive_fail, on_recover=reassert)
-            finally:
-                run.progress_done += 1
+            run.progress_done += 1
+
+        # ---- Self-heal: a captcha miss is often just bad luck on that one
+        # attempt, not a persistently broken item - a fresh try a few minutes
+        # later frequently succeeds (this is exactly what manual backfills
+        # proved repeatedly). Automate that instead of leaving it to a human.
+        EXTRA_PASSES = 3
+        for pass_num in range(1, EXTRA_PASSES + 1):
+            if not failed_states or cancel_requested(run.id):
+                break
+            run.log(
+                f"Self-heal pass {pass_num}/{EXTRA_PASSES}: retrying {len(failed_states)} "
+                f"failed item(s)", "info",
+            )
+            portal.open_report_page()
+            reassert()
+            still_failed = []
+            for st in failed_states:
+                if cancel_requested(run.id):
+                    still_failed.append(st)
+                    continue
+                dest, err = attempt_state(st)
+                if dest:
+                    succeeded.append(dest)
+                    run.log(f"OK (self-heal {pass_num})  {st['name']} -> {dest.name}")
+                else:
+                    still_failed.append(st)
+                    run.log(f"FAIL (self-heal {pass_num}) {st['name']}: {err}", "warn")
+            failed_states = still_failed
+
+        for st in failed_states:
+            failed.append(f"{st['name']} ({st['code']}): failed even after {EXTRA_PASSES} self-heal passes")
 
         # ---- All-India reference file (all states selected, not zipped) ------
         all_india_path: Path | None = None

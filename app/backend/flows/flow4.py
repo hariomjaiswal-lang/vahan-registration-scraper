@@ -108,6 +108,30 @@ def run_flow4(run: Run, cfg: dict) -> None:
         REFRESH_EVERY = 12
         item_count = 0
 
+        def attempt_item(st: dict, rto: dict, m: int) -> tuple[Path | None, Exception | None]:
+            code, name = st["code"], st["name"]
+            mon = _MON[m - 1]
+            dest = files_dir / f"Fuelwise_{year}-{mon}-{code}-{rto['code']}.xlsx"
+            try:
+                portal.select_only_state(code)
+                portal.select_only_rto(rto["value"])
+                portal.set_month_period(year, m)
+                portal.solve_captcha_and_apply(
+                    reassert=lambda c=code, rv=rto["value"], mm=m: (
+                        reassert(), portal.select_only_state(c),
+                        portal.select_only_rto(rv), portal.set_month_period(year, mm),
+                    )
+                )
+                assert_scope(
+                    portal.report_header_text(), ["RTO (", rto["code"]],
+                    f"{code} {rto['code']} {mon}",
+                )
+                portal.download_excel(dest)
+                return dest, None
+            except Exception as e:  # noqa: BLE001 - never let one item kill the whole run
+                return None, e
+
+        failed_items: list[tuple[dict, dict, int]] = []
         for st in states:
             if cancel_requested(run.id):
                 run.state = "cancelled"
@@ -143,35 +167,55 @@ def run_flow4(run: Run, cfg: dict) -> None:
                     item_count += 1
                     mon = _MON[m - 1]
                     run.current_item = f"{name} ({code}) - {rto['code']} - {mon} {year}"
-                    dest = files_dir / f"Fuelwise_{year}-{mon}-{code}-{rto['code']}.xlsx"
-                    try:
-                        portal.set_month_period(year, m)
-                        portal.solve_captcha_and_apply(
-                            reassert=lambda c=code, rv=rto["value"], mm=m: (
-                                reassert(), portal.select_only_state(c),
-                                portal.select_only_rto(rv), portal.set_month_period(year, mm),
-                            )
-                        )
-                        assert_scope(
-                            portal.report_header_text(), ["RTO (", rto["code"]],
-                            f"{code} {rto['code']} {mon}",
-                        )
-                        portal.download_excel(dest)
+                    dest, err = attempt_item(st, rto, m)
+                    if dest:
                         succeeded.append(dest)
                         per_state_files[code].append(dest)
                         run.log(f"OK  {code} {rto['code']} {mon} -> {dest.name}")
                         consecutive_fail = note_success(consecutive_fail)
-                    except Exception as e:  # noqa: BLE001 - never let one item kill the whole run
-                        failed.append(f"{code} {rto['code']} {mon}: {e}")
-                        run.log(f"FAIL {code} {rto['code']} {mon}: {e}", "error")
+                    else:
+                        failed_items.append((st, rto, m))
+                        run.log(f"FAIL {code} {rto['code']} {mon}: {err}", "error")
                         consecutive_fail = note_failure(
                             portal, run, consecutive_fail,
                             on_recover=lambda c=code, rv=rto["value"]: (
                                 reassert(), portal.select_only_state(c), portal.select_only_rto(rv),
                             ),
                         )
-                    finally:
-                        run.progress_done += 1
+                    run.progress_done += 1
+
+        # ---- Self-heal: see flow1.py - a captcha miss is often just bad luck
+        # on that one attempt, not a persistently broken item.
+        EXTRA_PASSES = 3
+        for pass_num in range(1, EXTRA_PASSES + 1):
+            if not failed_items or cancel_requested(run.id):
+                break
+            run.log(
+                f"Self-heal pass {pass_num}/{EXTRA_PASSES}: retrying {len(failed_items)} "
+                f"failed item(s)", "info",
+            )
+            portal.open_report_page()
+            reassert()
+            still_failed = []
+            for st, rto, m in failed_items:
+                if cancel_requested(run.id):
+                    still_failed.append((st, rto, m))
+                    continue
+                dest, err = attempt_item(st, rto, m)
+                mon = _MON[m - 1]
+                if dest:
+                    succeeded.append(dest)
+                    per_state_files[st["code"]].append(dest)
+                    run.log(f"OK (self-heal {pass_num})  {st['code']} {rto['code']} {mon} -> {dest.name}")
+                else:
+                    still_failed.append((st, rto, m))
+                    run.log(f"FAIL (self-heal {pass_num}) {st['code']} {rto['code']} {mon}: {err}", "warn")
+            failed_items = still_failed
+
+        for st, rto, m in failed_items:
+            failed.append(
+                f"{st['code']} {rto['code']} {_MON[m-1]}: failed even after {EXTRA_PASSES} self-heal passes"
+            )
       except Exception as e:  # noqa: BLE001 - package whatever succeeded, never lose the work
         aborted = True
         failed.append(f"RUN STOPPED EARLY: {e}")

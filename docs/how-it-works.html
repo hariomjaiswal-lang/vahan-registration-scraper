@@ -1,0 +1,534 @@
+<title>VAHAN Registration Pipeline</title>
+<meta name="description" content="How the Flow 1 automation pulls monthly vehicle-registration data from the VAHAN portal for all 36 states, end to end." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital@0;1&display=swap" />
+<style>
+  :root {
+    --ground:#f4f6f8; --surface:#ffffff; --surface-2:#eef2f6;
+    --ink:#17202e; --ink-2:#4a5566; --line:#d8dee6;
+    --accent:#1f5fd0; --accent-ink:#123a86; --accent-soft:#e9f0fc;
+    --ok:#1a7f4b; --warn:#a8620a; --stop:#b83d1e;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    --serif:"IBM Plex Serif",Georgia,"Times New Roman",serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ground:#10141a; --surface:#171c24; --surface-2:#1e242e;
+      --ink:#e7ebf1; --ink-2:#9aa6b4; --line:#2a323e;
+      --accent:#5a9bff; --accent-ink:#a9c8ff; --accent-soft:#17263f;
+      --ok:#43c78a; --warn:#d69a4a; --stop:#e2795c;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#10141a; --surface:#171c24; --surface-2:#1e242e;
+    --ink:#e7ebf1; --ink-2:#9aa6b4; --line:#2a323e;
+    --accent:#5a9bff; --accent-ink:#a9c8ff; --accent-soft:#17263f;
+    --ok:#43c78a; --warn:#d69a4a; --stop:#e2795c;
+  }
+
+  *{box-sizing:border-box;}
+  html{-webkit-text-size-adjust:100%;}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:var(--sans); font-size:16px; line-height:1.62;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:760px; margin:0 auto; padding:0 22px 96px;}
+
+  /* ---- header ---- */
+  header.page{padding:64px 0 28px; border-bottom:1px solid var(--line); margin-bottom:8px;}
+  .eyebrow{
+    font-family:var(--mono); font-size:12px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--accent-ink); margin:0 0 14px;
+  }
+  h1{
+    font-size:clamp(30px,5.4vw,42px); line-height:1.12; margin:0 0 16px;
+    font-weight:700; letter-spacing:-.02em; text-wrap:balance;
+  }
+  .standfirst{
+    font-family:var(--serif); font-size:19px; line-height:1.6;
+    color:var(--ink-2); margin:0; max-width:60ch;
+  }
+  .standfirst em{color:var(--ink);}
+
+  nav.toc{
+    display:flex; flex-wrap:wrap; gap:8px; margin:26px 0 0;
+  }
+  nav.toc a{
+    font-family:var(--mono); font-size:12px; text-decoration:none;
+    color:var(--ink-2); border:1px solid var(--line); border-radius:999px;
+    padding:5px 11px; background:var(--surface); transition:color .15s,border-color .15s;
+  }
+  nav.toc a:hover{color:var(--accent); border-color:var(--accent);}
+  nav.toc a:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+
+  /* ---- sections ---- */
+  section{padding:46px 0 8px; border-top:1px solid var(--line);}
+  section:first-of-type{border-top:0;}
+  h2{
+    font-size:23px; font-weight:600; letter-spacing:-.01em;
+    margin:0 0 6px; text-wrap:balance;
+  }
+  h2 .num{
+    font-family:var(--mono); font-size:13px; color:var(--accent-ink);
+    margin-right:10px; font-weight:500;
+  }
+  .lede{color:var(--ink-2); margin:0 0 22px; max-width:64ch;}
+  p{max-width:64ch;}
+  strong{font-weight:600;}
+  code{
+    font-family:var(--mono); font-size:.86em; background:var(--surface-2);
+    padding:1px 5px; border-radius:4px; color:var(--ink);
+  }
+
+  /* ---- the flow spine ---- */
+  ol.flow{list-style:none; margin:0; padding:0; position:relative;}
+  ol.flow::before{
+    content:""; position:absolute; left:16px; top:6px; bottom:14px;
+    width:2px; background:var(--line);
+  }
+  ol.flow>li{
+    position:relative; padding:0 0 26px 52px; min-height:34px;
+  }
+  ol.flow>li .n{
+    position:absolute; left:0; top:-2px; width:34px; height:34px;
+    display:grid; place-items:center; border-radius:50%;
+    background:var(--surface); border:2px solid var(--accent);
+    color:var(--accent-ink); font-family:var(--mono); font-size:13px; font-weight:500;
+  }
+  ol.flow>li h3{
+    font-size:16px; font-weight:600; margin:4px 0 4px;
+  }
+  ol.flow>li p{margin:0; color:var(--ink-2); font-size:15px;}
+  .detail{
+    display:block; margin-top:7px; font-family:var(--mono); font-size:12.5px;
+    color:var(--ink); background:var(--surface-2); border-left:2px solid var(--accent);
+    padding:7px 10px; border-radius:0 5px 5px 0; white-space:pre-wrap; word-break:break-word;
+  }
+
+  .loop{
+    position:relative; margin:2px 0 26px; padding:16px 0 2px 0;
+    border:1px solid var(--line); border-left:3px solid var(--accent);
+    border-radius:0 8px 8px 0; background:var(--accent-soft);
+  }
+  .loop .loop-tag{
+    display:inline-block; margin:0 0 6px 52px; font-family:var(--mono);
+    font-size:11px; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--accent-ink); font-weight:500;
+  }
+  .loop ol.flow::before{left:16px;}
+  .loop ol.flow{padding:0 16px 0 16px;}
+  .loop ol.flow>li{padding-bottom:20px;}
+  .loop ol.flow>li:last-child{padding-bottom:6px;}
+  .loop ol.flow>li .n{background:var(--accent-soft);}
+
+  /* ---- tables ---- */
+  .scroll{overflow-x:auto; margin:6px 0 20px; border:1px solid var(--line); border-radius:8px;}
+  table{
+    width:100%; border-collapse:collapse; font-size:14px;
+    font-variant-numeric:tabular-nums;
+  }
+  th,td{text-align:left; padding:9px 13px; border-bottom:1px solid var(--line);}
+  th{
+    background:var(--surface-2); font-weight:600; font-size:12px;
+    letter-spacing:.03em; text-transform:uppercase; color:var(--ink-2);
+    white-space:nowrap;
+  }
+  td:not(:first-child){font-family:var(--mono); font-size:13px;}
+  tbody tr:last-child td{border-bottom:0;}
+  .tick{color:var(--ok); font-weight:600;}
+
+  /* ---- callouts ---- */
+  .panel{
+    background:var(--surface); border:1px solid var(--line);
+    border-radius:10px; padding:20px 22px; margin:4px 0 20px;
+  }
+  .panel h3{margin:0 0 12px; font-size:14px; text-transform:uppercase;
+    letter-spacing:.06em; color:var(--ink-2); font-weight:600;}
+  .facts{list-style:none; margin:0; padding:0; display:grid; gap:9px;}
+  .facts li{display:flex; gap:12px; align-items:baseline; font-size:15px;}
+  .facts .k{
+    flex:0 0 128px; font-family:var(--mono); font-size:12px; color:var(--ink-2);
+    text-transform:uppercase; letter-spacing:.04em;
+  }
+  .facts .v strong{font-weight:600;}
+
+  pre.tree{
+    font-family:var(--mono); font-size:12.5px; line-height:1.7;
+    background:var(--surface); border:1px solid var(--line); border-radius:10px;
+    padding:18px 20px; overflow-x:auto; color:var(--ink); margin:4px 0 18px;
+  }
+  pre.tree .c{color:var(--ink-2);}
+  pre.tree .hl{color:var(--accent-ink);}
+
+  .split{display:grid; gap:18px;}
+  @media(min-width:620px){.split{grid-template-columns:1fr 1fr;}}
+  .split .panel{margin:0;}
+  .split .panel ul{margin:0; padding-left:18px; color:var(--ink-2); font-size:15px;}
+  .split .panel li{margin:6px 0;}
+  .split .panel.done{border-left:3px solid var(--ok);}
+  .split .panel.next{border-left:3px solid var(--warn);}
+
+  .callout{
+    border-left:3px solid var(--accent); background:var(--accent-soft);
+    padding:14px 18px; border-radius:0 8px 8px 0; margin:6px 0 18px;
+    font-size:15px; color:var(--ink);
+  }
+
+  footer{
+    margin-top:52px; padding-top:22px; border-top:1px solid var(--line);
+    font-family:var(--mono); font-size:12px; color:var(--ink-2);
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;}}
+</style>
+
+<div class="wrap">
+<header class="page">
+  <p class="eyebrow">RPA &middot; Process walkthrough for review</p>
+  <h1>VAHAN Registration Pipeline</h1>
+  <p class="standfirst">
+    A plain-language account of how <em>Flow&nbsp;1 (Vahan_StateMonthwise)</em> pulls
+    monthly vehicle-registration data from the Government of India's VAHAN portal &mdash;
+    every state, broken down by manufacturer &mdash; without anyone sitting at the screen,
+    and how it checks its own work before handing over the files.
+  </p>
+  <nav class="toc">
+    <a href="#why">Why</a>
+    <a href="#flow">End-to-end flow</a>
+    <a href="#filters">The filters</a>
+    <a href="#captcha">The captcha</a>
+    <a href="#storage">Where data lives</a>
+    <a href="#sessions">Sessions</a>
+    <a href="#recon">The accuracy check</a>
+    <a href="#status">Proven / next</a>
+  </nav>
+</header>
+
+<section id="why">
+  <h2>Why this exists</h2>
+  <p class="lede">
+    The Sales &amp; Marketing team uses VAHAN registration numbers for market share,
+    fuel-trend and planning work. Getting them by hand means logging in, setting the
+    same filters, solving a picture-code, running a report and downloading a file
+    &mdash; then repeating that <strong>36 times</strong> (once per State/UT), on a
+    daily cadence.
+  </p>
+  <p>
+    This automation does exactly what the person did, in the same browser, on the same
+    public page &mdash; just unattended. It also adds a step a person rarely has time
+    for: it independently re-checks that the 36 downloaded files add up to the national
+    totals before anything is delivered.
+  </p>
+  <div class="callout">
+    <strong>Source:</strong> the public
+    <code>analytics.parivahan.gov.in/analytics/vahanpublicreport</code> page &mdash;
+    the same one staff already use. No login, no paid API, nothing leaves the machine.
+  </div>
+</section>
+
+<section id="flow">
+  <h2><span class="num">1&ndash;9</span>End-to-end flow</h2>
+  <p class="lede">
+    One run = setup, then the same four actions repeated for each of the 36 states,
+    then packaging and the accuracy check. Roughly 4&ndash;5 minutes start to finish.
+  </p>
+
+  <ol class="flow">
+    <li>
+      <span class="n">1</span>
+      <h3>Trigger</h3>
+      <p>Someone clicks <strong>Start run</strong> on the dashboard, or a scheduled
+        Windows task starts it (the PDD asks for daily). Nothing to babysit.</p>
+    </li>
+    <li>
+      <span class="n">2</span>
+      <h3>Open a browser</h3>
+      <p>The tool launches Chromium (Chrome's engine) in the background and opens a
+        fresh, private session &mdash; its own cookies, its own captcha.</p>
+    </li>
+    <li>
+      <span class="n">3</span>
+      <h3>Go to the VAHAN report page &amp; set the fixed filters</h3>
+      <p>It waits for the page to load (retries up to 3&times; if the site is down),
+        then applies the same six filter settings every time &mdash; see
+        <a href="#filters">The filters</a>.</p>
+    </li>
+  </ol>
+
+  <div class="loop">
+    <span class="loop-tag">Repeats for each of the 36 States / UTs</span>
+    <ol class="flow">
+      <li>
+        <span class="n">4</span>
+        <h3>Pick the state</h3>
+        <p>From Andaman &amp; Nicobar to West Bengal. The portal's own state code
+          (MH, KA, DL&hellip;) is read straight from the page and becomes part of the
+          file name.</p>
+      </li>
+      <li>
+        <span class="n">5</span>
+        <h3>Solve the captcha</h3>
+        <p>The page shows a distorted code. The tool reads it automatically; if it
+          isn't confident, the dashboard shows the image and a person types it in.
+          Full detail in <a href="#captcha">The captcha</a>.</p>
+      </li>
+      <li>
+        <span class="n">6</span>
+        <h3>Run the report</h3>
+        <p>Clicks <strong>Apply</strong>. The portal reloads with the
+          manufacturer&nbsp;&times;&nbsp;month table for that state.</p>
+      </li>
+      <li>
+        <span class="n">7</span>
+        <h3>Download &amp; rename the Excel</h3>
+        <p>Clicks <strong>Download All Records Excel</strong>, waits for the file,
+          checks it isn't empty, and renames it to the standard convention.</p>
+        <span class="detail">Monthwise_2026-MH.xlsx   Monthwise_2026-KA.xlsx   &hellip; (36 files)</span>
+      </li>
+    </ol>
+  </div>
+
+  <ol class="flow" start="8">
+    <li>
+      <span class="n">8</span>
+      <h3>All-India reference file</h3>
+      <p>After the 36 states, it selects <em>all</em> states together and downloads one
+        national file. This is only used for the accuracy check and is deliberately
+        kept <strong>out</strong> of the delivered zip.</p>
+    </li>
+    <li>
+      <span class="n">9</span>
+      <h3>Package, check, summarise, close</h3>
+      <p>Zips the 36 state files &rarr; runs the
+        <a href="#recon">reconciliation check</a> &rarr; writes an Excel summary
+        (states done, time taken, pass/fail) &rarr; closes the browser. Emailing the
+        summary is the one piece still to be wired up.</p>
+      <span class="detail">Flow1_StateMonthwise_2026_&lt;timestamp&gt;.zip   +   Flow1_Summary_&lt;timestamp&gt;.xlsx</span>
+    </li>
+  </ol>
+</section>
+
+<section id="filters">
+  <h2><span class="num">2</span>The filters &mdash; what the report contains</h2>
+  <p class="lede">
+    Six settings, identical on every state, every run. They decide the shape and
+    scope of the report; the tool never changes them mid-run.
+  </p>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr><th>Filter</th><th>Value used</th><th>Why</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Archived Flag</td>
+          <td>All four: Active-Compliant, Active-Non-Compliant, Permanent Archive, Temporary Archive</td>
+          <td>Count every registration, not only currently-active ones</td>
+        </tr>
+        <tr>
+          <td>Year Type</td>
+          <td>Calendar Year &rarr; current year</td>
+          <td>Report covers January to today of this year</td>
+        </tr>
+        <tr>
+          <td>Vehicle Sub-Category</td>
+          <td>Light Motor Vehicle + Light Passenger Vehicle</td>
+          <td>Passenger / light vehicles only &mdash; the segment the team tracks</td>
+        </tr>
+        <tr>
+          <td>Y-Axis (rows)</td>
+          <td>Maker</td>
+          <td>One row per manufacturer</td>
+        </tr>
+        <tr>
+          <td>X-Axis (columns)</td>
+          <td>Month Wise</td>
+          <td>One column per month</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Behind the scenes these are ordinary form controls on the page
+    (<code>#archivedFlags</code>, <code>#vehicleSubCategory</code>, <code>#yAxis</code>,
+    <code>#xAxis</code>&hellip;). The tool sets them the same way a person would &mdash;
+    it just does it in code, so a filter can never be forgotten or picked wrongly.
+  </p>
+</section>
+
+<section id="captcha">
+  <h2><span class="num">3</span>How the captcha is handled</h2>
+  <p class="lede">
+    VAHAN asks for a fresh 6-character picture-code before <em>every</em> Apply
+    &mdash; about 37 times per run. This is the part people expect to block
+    automation, so it has four layers.
+  </p>
+  <ol class="flow">
+    <li>
+      <span class="n">A</span>
+      <h3>Read it automatically</h3>
+      <p>The tool screenshots the captcha image and runs it through
+        <strong>ddddocr</strong> &mdash; a small open-source text-recognition model
+        built for exactly this kind of code. It runs offline; the image never leaves
+        the machine, and there is no paid captcha service.</p>
+    </li>
+    <li>
+      <span class="n">B</span>
+      <h3>Submit if the guess looks solid</h3>
+      <p>A plausible 5&ndash;8 character result is typed into the box and Apply is
+        clicked.</p>
+    </li>
+    <li>
+      <span class="n">C</span>
+      <h3>Retry on a weak or rejected guess</h3>
+      <p>If the result looks off, or the portal rejects it, the tool requests a fresh
+        captcha and tries again &mdash; up to <strong>5 attempts</strong> per state.</p>
+    </li>
+    <li>
+      <span class="n">D</span>
+      <h3>Ask a person (dashboard runs)</h3>
+      <p>If automatic reading keeps failing, the run <strong>pauses</strong> and shows
+        the captcha image in the dashboard. An operator types it and the run resumes
+        exactly where it stopped. A 10-minute window applies before it falls back to
+        another automatic attempt.</p>
+    </li>
+  </ol>
+  <div class="callout">
+    <strong>In the last full 36-state run:</strong> automatic reading solved 35 of 37
+    codes on the first try; the other 2 succeeded on the second attempt.
+    <strong>No human input was needed.</strong>
+  </div>
+</section>
+
+<section id="storage">
+  <h2><span class="num">4</span>Where the data lives</h2>
+  <p class="lede">
+    There is <strong>no database</strong>. Results are plain files on one Windows
+    machine, one folder per run, named by run-id and timestamp so nothing is ever
+    overwritten.
+  </p>
+  <pre class="tree">C:\web-scraping\
+├─ <span class="hl">output\</span>
+│  └─ 1789015865-4_flow1_20260910-102105\   <span class="c">← one folder per run</span>
+│     ├─ files\                              <span class="c">← the 36 renamed state files</span>
+│     │  ├─ Monthwise_2026-AN.xlsx
+│     │  ├─ Monthwise_2026-MH.xlsx  <span class="c">… (36 total)</span>
+│     ├─ all_india\
+│     │  └─ Monthwise_2026-ALL-INDIA.xlsx    <span class="c">← check only — NOT zipped</span>
+│     ├─ Flow1_StateMonthwise_2026_*.zip     <span class="c">← the deliverable (36 files)</span>
+│     └─ Flow1_Summary_*.xlsx                <span class="c">← counts, timing, check result</span>
+├─ downloads\      <span class="c">scratch — where Chrome drops a file before renaming</span>
+├─ logs\           <span class="c">reserved for run logs</span>
+├─ calibration\    <span class="c">one-time snapshots of the portal's page layout</span>
+├─ config.yaml     <span class="c">all settings: URL, filters, retry counts, naming</span>
+└─ data\state_master.csv   <span class="c">the 36 state names + codes</span></pre>
+  <p>
+    The delivered <strong>zip</strong> holds exactly the 36 state files. The
+    <strong>All-India</strong> file sits beside it for the accuracy check but is never
+    included, per the PDD. The <strong>summary</strong> spreadsheet records how many
+    states were processed, how long it took, and whether the check passed.
+  </p>
+</section>
+
+<section id="sessions">
+  <h2><span class="num">5</span>Sessions &mdash; three kinds, all short-lived</h2>
+  <ul class="facts">
+    <li><span class="k">Browser</span><span class="v"><strong>A fresh private Chromium profile per run.</strong> Holds the portal's cookies and the current captcha. Created at the start, closed at the end &mdash; nothing is reused between runs, so one run can never disturb another.</span></li>
+    <li><span class="k">Run state</span><span class="v"><strong>Lives in memory in the dashboard while a run is active.</strong> Its progress bar, live log and any pending captcha. One run at a time. Cleared if the dashboard is restarted &mdash; but the output files and summary on disk are permanent.</span></li>
+    <li><span class="k">Portal (their side)</span><span class="v"><strong>VAHAN ties each captcha to its own server session cookie.</strong> Our browser session carries that cookie, which is why a fresh browser per run avoids stale-captcha problems.</span></li>
+  </ul>
+</section>
+
+<section id="recon">
+  <h2><span class="num">6</span>The accuracy check (PDD Step 8.2)</h2>
+  <p class="lede">
+    Collating 36 separate files risks something going missing or being counted twice.
+    The check removes the doubt for two manufacturer groups the team follows.
+  </p>
+  <ul class="facts">
+    <li><span class="k">Group MB</span><span class="v">Mercedes-Benz &middot; Mercedes-Benz AG &middot; Mercedes-Benz India Pvt Ltd &middot; Daimler AG</span></li>
+    <li><span class="k">Group BMW</span><span class="v">BMW India Pvt Ltd</span></li>
+  </ul>
+  <p>
+    For each group, the tool adds up registrations across all 36 state files
+    <strong>month by month</strong>, then compares that total to the same figure taken
+    from the All-India file. Every month must match exactly &mdash; a difference of
+    even one means a record was lost or duplicated.
+  </p>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr><th>Month</th><th>MB &mdash; 36 states</th><th>MB &mdash; All-India</th><th>BMW &mdash; 36 states</th><th>BMW &mdash; All-India</th><th>Match</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Jan</td><td>2,028</td><td>2,028</td><td>2,160</td><td>2,160</td><td class="tick">&check;</td></tr>
+        <tr><td>Feb</td><td>1,570</td><td>1,570</td><td>1,389</td><td>1,389</td><td class="tick">&check;</td></tr>
+        <tr><td>Mar</td><td>1,633</td><td>1,633</td><td>1,786</td><td>1,786</td><td class="tick">&check;</td></tr>
+        <tr><td>Apr</td><td>1,471</td><td>1,471</td><td>1,598</td><td>1,598</td><td class="tick">&check;</td></tr>
+        <tr><td>May</td><td>1,420</td><td>1,420</td><td>1,441</td><td>1,441</td><td class="tick">&check;</td></tr>
+        <tr><td>Jun</td><td>1,694</td><td>1,694</td><td>1,789</td><td>1,789</td><td class="tick">&check;</td></tr>
+        <tr><td>Jul</td><td>1,609</td><td>1,609</td><td>1,765</td><td>1,765</td><td class="tick">&check;</td></tr>
+        <tr><td>Aug</td><td>1,400</td><td>1,400</td><td>1,448</td><td>1,448</td><td class="tick">&check;</td></tr>
+        <tr><td>Sep</td><td>488</td><td>488</td><td>461</td><td>461</td><td class="tick">&check;</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Every cell matched &mdash; difference <strong>zero</strong> on all 18 checks. That
+    confirms the 36 files were collated with nothing missing, duplicated or
+    misread. If any month had failed, the run would flag it and the summary would
+    name the exact month and group (and, once wired, email a consolidated report).
+  </p>
+</section>
+
+<section id="status">
+  <h2><span class="num">7</span>Where it stands</h2>
+  <div class="panel">
+    <h3>Last verified run</h3>
+    <ul class="facts">
+      <li><span class="k">Run</span><span class="v"><strong>1789015865-4</strong> &mdash; live VAHAN portal, 10&nbsp;Sep&nbsp;2026</span></li>
+      <li><span class="k">Files</span><span class="v"><strong>36 / 36</strong> downloaded, 0 failures</span></li>
+      <li><span class="k">Duration</span><span class="v"><strong>4 min 36 sec</strong></span></li>
+      <li><span class="k">Captcha</span><span class="v">Automatic &mdash; 35/37 first try, 2 on retry, no human input</span></li>
+      <li><span class="k">Step 8.2</span><span class="v" ><strong style="color:var(--ok)">Reconciliation PASSED</strong> &mdash; all 18 checks exact</span></li>
+    </ul>
+  </div>
+  <div class="split">
+    <div class="panel done">
+      <h3>Working &amp; tested</h3>
+      <ul>
+        <li>All 36 states in one unattended run</li>
+        <li>Fixed filters applied identically every time</li>
+        <li>Automatic captcha with human fallback</li>
+        <li>Standard file names + delivered zip</li>
+        <li>Accuracy check against All-India totals</li>
+        <li>Dashboard to start runs and watch progress live</li>
+      </ul>
+    </div>
+    <div class="panel next">
+      <h3>Still to do</h3>
+      <ul>
+        <li>Email the summary + zip to the recipient list (needs mail-server details)</li>
+        <li>Flows 2&ndash;4 from the PDD: fuel-wise, and the ~1,700-RTO versions &mdash; same engine, extra loops</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>The tools, in one line</h2>
+  <p>
+    Python drives a real Chrome browser (via <strong>Playwright</strong>); a small
+    web app (<strong>FastAPI</strong>) is the dashboard; an offline model
+    (<strong>ddddocr</strong>) reads the captchas; Excel files are read and written
+    with <strong>openpyxl</strong>. It all runs on <strong>one Windows machine</strong>
+    &mdash; no cloud, no external services, no paid APIs.
+  </p>
+</section>
+
+<footer>
+  VAHAN Registration Pipeline &middot; Flow 1 (Vahan_StateMonthwise) &middot; process walkthrough
+</footer>
+</div>

@@ -1,0 +1,114 @@
+# ---------------------------------------------------------------------------
+# VAHAN scraper configuration
+# Every portal-specific value lives here so we can calibrate against the live
+# site without touching Python. Run `python -m tools.calibrate` to dump the
+# real DOM and fill in anything marked TODO.
+# ---------------------------------------------------------------------------
+
+portal:
+  url: "https://analytics.parivahan.gov.in/analytics/vahanpublicreport?lang=en"
+  # Seconds to wait for the filter panel to appear after navigation.
+  load_timeout: 60
+  # Seconds to wait for the report grid + export button after clicking Apply.
+  report_timeout: 120
+  # Retry policy from the PDD "Business Exceptions" table.
+  navigation_retries: 3
+  captcha_retries: 5
+  report_retries: 2
+
+captcha:
+  # When OCR is unsure and this is on, the run pauses and the dashboard asks an
+  # operator. Off = fully unattended: an unsure guess is submitted anyway and
+  # handled by the normal automatic retry (up to 5 attempts per item) instead
+  # of waiting for a person - needed for scheduled/overnight runs.
+  manual_fallback: false
+  operator_timeout: 600          # seconds to wait for an operator before falling back to OCR
+
+browser:
+  headless: true
+  # Slow motion (ms) between actions - helpful while calibrating, set 0 for prod.
+  slow_mo: 0
+  # Where Chromium drops downloaded files before we rename/move them.
+  download_dir: "downloads"
+
+paths:
+  output_dir: "output"          # per-run folders land here
+  logs_dir: "logs"
+  state_master: "data/state_master.csv"
+
+filters:
+  # Applied on every flow before the loop starts. Values below are the actual
+  # <option value="..."> strings on the portal (confirmed via calibration).
+  archived_flag:
+    - "ACTIVE_COMPLIANT"
+    - "ACTIVE_NON_COMPLIANT"
+    - "PERMANENT_ARCHIVE"
+    - "TEMPORARY_ARCHIVE"
+  year_type_value: "0"              # #reportType: 0 = CALENDAR YEAR (Flow 1)
+  month_flexible_value: "9"         # #reportType: 9 = 1 Month Flexible (Flow 2 & 4)
+  sub_category:
+    - "LIGHT MOTOR VEHICLE"
+    - "LIGHT PASSENGER VEHICLE"
+
+# Axis <option> values on #yAxis / #xAxis (calibration-confirmed).
+axes:
+  maker_value: "vehicleMakerName"   # PDD "Maker"
+  monthwise_value: "monthWise"      # PDD "Month Wise"
+  fuel_value: "vehicleFuel"         # PDD "Fuel" (Flows 2 & 4)
+
+reconciliation:
+  # Maker buckets from PDD Step 8.2. Names are matched case-insensitively with
+  # whitespace/punctuation normalised, so the PDD spellings and the portal's
+  # actual strings (e.g. "MERCEDES -BENZ AG", "MERCEDES-BENZ INDIA PVT LTD")
+  # both resolve. "DAIMLER INDIA COMMERCIAL VEHICLES" is deliberately excluded
+  # (commercial trucks, not the MB passenger bucket).
+  buckets:
+    MB:
+      - "MERCEDES BENZ"
+      - "MERCEDES BENZ - AG"
+      - "MERCEDES BENZ AG"
+      - "MERCEDES-BENZ AG"
+      - "MERCEDES BENZ INDIA PVT LTD"
+      - "MERCEDES-BENZ INDIA PVT LTD"
+      - "DAIMLER AG"
+    BMW:
+      - "BMW INDIA PVT LTD"
+
+# ---------------------------------------------------------------------------
+# Selectors - all calibration-confirmed against the live portal (Sep 2026).
+# The portal is a Spring MVC form; multi-selects are hidden native <select>
+# elements (id below) wrapped by the `multiselect-dropdown` widget. portal.py
+# drives the native <select> directly (set .selected + dispatch change), which
+# is far more reliable than the widget UI. "Apply" is a full-page POST.
+# ---------------------------------------------------------------------------
+selectors:
+  form: "#vahanPublicForm"
+  filter_panel_ready: "#applyTrigger"
+
+  y_axis: "#yAxis"                 # native <select>
+  x_axis: "#xAxis"                 # native <select>, options depend on y_axis
+  year_type: "#reportType"        # native <select>
+  year_from: "#fromYear"          # text input (Calendar Year mode)
+  year_to: "#toYear"              # text input (Calendar Year mode)
+  month_from_date: "#fromDate"    # text input (1 Month Flexible mode) e.g. "1 Jan 2026"
+  month_to_date: "#toDate"        # text input (1 Month Flexible mode) e.g. "31 Jan 2026"
+
+  archived_flag_select: "#archivedFlags"        # hidden multi <select>
+  sub_category_select: "#vehicleSubCategory"    # hidden multi <select>
+  state_select: "#stateName"                    # hidden multi <select>; option value = state code
+  rto_select: "#rtoCode"                        # hidden multi <select> (Flows 3-4)
+
+  captcha_image: "#captchaImage"
+  captcha_refresh: "#captchaImg"
+  captcha_input: "#externalCaptcha"
+  captcha_error: "#captchaError"
+
+  apply_button: "#applyTrigger"
+  # Y-Axis=Maker renders a paginated "maker view" with its own export buttons;
+  # other Y-Axis values use the generic grid (#downloadBtn1). Support both.
+  download_excel: "#downloadMakerAllExcel, #downloadBtn1"
+  download_csv: "#downloadMakerAllCsv, #downloadBtn"
+  report_header: "#makerDynamicReportHeader, #dynamicReportHeader"
+  report_table: "#makerPagedReportTable, #ReportTable, #reportTable"
+  export_status: "#makerExportStatus"
+  system_error: ".alert-danger:not(.hidden), .text-danger:not(#captchaError):not(#yAxisError)"

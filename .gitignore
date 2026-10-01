@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+frontend/config.local.js
+output/
+downloads/
+logs/
+runs/
+*.log
+.playwright/
+calibration/
+scratch/
+~$*.docx
+~$*.xlsx
+.claude/

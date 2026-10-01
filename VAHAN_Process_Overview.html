@@ -1,0 +1,270 @@
+<title>VAHAN Data Pipeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@500;600;700&family=Work+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+  :root{
+    --paper:#F4F7FA;
+    --panel:#FFFFFF;
+    --ink:#12233B;
+    --ink-soft:#4C5C70;
+    --ink-faint:#8195A8;
+    --line:#DCE4EA;
+    --line-strong:#C3D0DA;
+    --accent:#0E7C86;
+    --accent-ink:#FFFFFF;
+    --accent-soft:#E3F1F1;
+    --amber:#B96A1F;
+    --amber-soft:#F7EADA;
+    --status-bg:#E4F3EC;
+    --status-ink:#1F7A4D;
+    --status-dot:#2FA86A;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#0D1620;
+      --panel:#131F2B;
+      --ink:#E8F0F6;
+      --ink-soft:#A9B9C8;
+      --ink-faint:#6E8194;
+      --line:#22303F;
+      --line-strong:#324457;
+      --accent:#3FBAC2;
+      --accent-ink:#06171A;
+      --accent-soft:rgba(63,186,194,.14);
+      --amber:#E0925A;
+      --amber-soft:rgba(224,146,90,.14);
+      --status-bg:rgba(47,168,106,.14);
+      --status-ink:#6BD69B;
+      --status-dot:#3FBF83;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#0D1620;
+    --panel:#131F2B;
+    --ink:#E8F0F6;
+    --ink-soft:#A9B9C8;
+    --ink-faint:#6E8194;
+    --line:#22303F;
+    --line-strong:#324457;
+    --accent:#3FBAC2;
+    --accent-ink:#06171A;
+    --accent-soft:rgba(63,186,194,.14);
+    --amber:#E0925A;
+    --amber-soft:rgba(224,146,90,.14);
+    --status-bg:rgba(47,168,106,.14);
+    --status-ink:#6BD69B;
+    --status-dot:#3FBF83;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font:400 16px/1.6 'Work Sans', -apple-system, sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:760px; margin:0 auto; padding:64px 24px 96px;}
+
+  .eyebrow{
+    font:500 11px/1 'IBM Plex Mono', monospace; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--accent); margin:0 0 10px;
+  }
+  h1, h2, h3{font-family:'Zilla Slab', Georgia, serif; color:var(--ink); text-wrap:balance;}
+
+  /* ---- doc header ---- */
+  header.doc{border-bottom:1px solid var(--line); padding-bottom:28px; margin-bottom:36px;}
+  header.doc h1{font-size:38px; font-weight:700; margin:0 0 10px; line-height:1.12;}
+  header.doc .lede{font-size:16px; color:var(--ink-soft); max-width:56ch; margin:0 0 26px;}
+  .meta{display:flex; flex-wrap:wrap; gap:28px 40px;}
+  .meta .item .k{
+    font:500 10.5px/1 'IBM Plex Mono', monospace; letter-spacing:.07em; text-transform:uppercase;
+    color:var(--ink-faint); margin:0 0 6px;
+  }
+  .meta .item .v{font:500 14px/1.3 'Work Sans'; color:var(--ink);}
+  .status{
+    display:inline-flex; align-items:center; gap:6px; padding:3px 10px 3px 8px;
+    background:var(--status-bg); color:var(--status-ink); border-radius:100px;
+    font:600 12.5px/1 'Work Sans';
+  }
+  .status i{width:6px; height:6px; border-radius:50%; background:var(--status-dot); display:block;}
+
+  /* ---- purpose ---- */
+  section.purpose{margin-bottom:52px;}
+  section.purpose p{font-size:15.5px; color:var(--ink-soft); max-width:64ch; margin:0 0 12px;}
+  section.purpose p:last-child{margin-bottom:0;}
+
+  /* ---- flow sections ---- */
+  section.flow{margin-bottom:56px;}
+  .flow-head{display:flex; align-items:baseline; justify-content:space-between; gap:16px; flex-wrap:wrap;}
+  .flow-head h2{font-size:25px; font-weight:600; margin:0 0 6px;}
+  .flow-tag{
+    font:500 11.5px/1 'IBM Plex Mono', monospace; color:var(--ink-faint);
+    background:var(--panel); border:1px solid var(--line-strong); border-radius:6px;
+    padding:4px 9px; white-space:nowrap;
+  }
+  .flow-desc{font-size:14.5px; color:var(--ink-soft); max-width:60ch; margin:2px 0 0;}
+
+  .steps{position:relative; margin-top:26px;}
+  .steps::before{
+    content:""; position:absolute; left:19px; top:6px; bottom:6px; width:2px; background:var(--line-strong);
+  }
+  .step{position:relative; display:grid; grid-template-columns:40px 1fr; column-gap:18px; padding:13px 0;}
+  .step .num{
+    position:relative; z-index:1; width:40px; height:40px; border-radius:50%;
+    background:var(--panel); border:2px solid var(--accent); color:var(--accent);
+    font:500 13px/1 'IBM Plex Mono', monospace; display:flex; align-items:center; justify-content:center;
+  }
+  .step.output .num{border-color:var(--amber); color:var(--amber); background:var(--amber-soft);}
+  .step h3{margin:3px 0 4px; font:600 15px/1.3 'Work Sans'; font-family:'Work Sans'; color:var(--ink);}
+  .step p{margin:0; font-size:13.5px; line-height:1.55; color:var(--ink-soft); max-width:58ch;}
+
+  /* ---- capabilities ---- */
+  section.caps h2{font-size:22px; font-weight:600; margin:0 0 6px;}
+  section.caps > .flow-desc{margin-bottom:24px;}
+  .capgrid{display:grid; grid-template-columns:repeat(2, 1fr); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:12px; overflow:hidden;}
+  .cap{background:var(--panel); padding:20px 22px;}
+  .cap h3{margin:0 0 6px; font:600 14.5px 'Work Sans'; color:var(--ink);}
+  .cap p{margin:0; font-size:13px; line-height:1.55; color:var(--ink-soft);}
+
+  footer{margin-top:60px; padding-top:22px; border-top:1px solid var(--line);}
+  footer p{margin:0; font-size:12.5px; color:var(--ink-faint);}
+
+  @media (max-width:600px){
+    .wrap{padding:44px 18px 72px;}
+    header.doc h1{font-size:30px;}
+    .capgrid{grid-template-columns:1fr;}
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="doc">
+    <p class="eyebrow">Process Overview</p>
+    <h1>VAHAN Registration Data Automation</h1>
+    <p class="lede">A plain-language look at how registration reports are pulled from the Government of India's VAHAN portal and turned into ready-to-use data for the Sales &amp; Marketing team — covering the two workflows currently live.</p>
+    <div class="meta">
+      <div class="item"><p class="k">Prepared for</p><p class="v">Sales &amp; Marketing Team</p></div>
+      <div class="item"><p class="k">Source</p><p class="v">VAHAN Public Report Portal</p></div>
+      <div class="item"><p class="k">Workflows covered</p><p class="v">2 of the automation's report types</p></div>
+      <div class="item"><p class="k">Status</p><p class="v"><span class="status"><i></i>Active</span></p></div>
+    </div>
+  </header>
+
+  <section class="purpose">
+    <p>Vehicle registration data from VAHAN drives market-share tracking, fuel-preference trends, and sales planning — but pulling it by hand means visiting every State and Union Territory separately, one report at a time. This automation does that visiting for you, on a schedule, and hands back a single checked, ready-to-use file instead of dozens of loose downloads.</p>
+    <p>Below are the two report types running today. Each follows the same shape: connect, collect, check, deliver.</p>
+  </section>
+
+  <section class="flow">
+    <div class="flow-head">
+      <h2>State-wise Monthly Report</h2>
+      <span class="flow-tag">Workflow 1 · Vahan_StateMonthwise</span>
+    </div>
+    <p class="flow-desc">Registration counts by vehicle maker, broken down by month, for every State and Union Territory — the base figure everything else gets checked against.</p>
+    <div class="steps">
+      <div class="step">
+        <div class="num">1</div>
+        <div class="body"><h3>Open the VAHAN portal</h3><p>Connects to the official reporting page and confirms it has loaded correctly before doing anything else.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <div class="body"><h3>Apply the standard filters</h3><p>Sets vehicle category and the current reporting year the same way, every time — no filter is ever left on a stale value from a previous report.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <div class="body"><h3>Step through all 36 States &amp; UTs</h3><p>Works through the full list one at a time, in order, so none are skipped.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">4</div>
+        <div class="body"><h3>Clear the security check</h3><p>Reads and solves the portal's captcha automatically at each state, without a person clicking through it.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">5</div>
+        <div class="body"><h3>Download &amp; combine</h3><p>Pulls that state's report, then packages all 36 into a single organised file.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">6</div>
+        <div class="body"><h3>Check the totals</h3><p>Adds up the Mercedes-Benz and BMW figures across all 36 states and compares that sum against an independent all-India total, to confirm nothing was missed or counted twice.</p></div>
+      </div>
+      <div class="step output">
+        <div class="num">7</div>
+        <div class="body"><h3>Email the result</h3><p>Sends the packaged report and a pass/fail summary straight to the inbox — no one has to remember to go check.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="flow">
+    <div class="flow-head">
+      <h2>State-wise Fuel Report</h2>
+      <span class="flow-tag">Workflow 2 · Vahan_StateFuelwise</span>
+    </div>
+    <p class="flow-desc">The same state-by-state pull, but broken down by fuel type and repeated for every month of the year so far — showing how fuel preference is shifting, month over month, across regions.</p>
+    <div class="steps">
+      <div class="step">
+        <div class="num">1</div>
+        <div class="body"><h3>Open the VAHAN portal</h3><p>Same starting point as the monthly report, confirmed loaded before proceeding.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <div class="body"><h3>Apply the standard filters</h3><p>Same consistent filter setup, this time reading the fuel-type breakdown instead of the plain monthly total.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <div class="body"><h3>Step through every state, every month</h3><p>For each of the 36 States &amp; UTs, it repeats the pull for January through to the current month — so a state isn't just one report, it's one per month.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">4</div>
+        <div class="body"><h3>Clear the security check</h3><p>Solves the captcha automatically at every state-month combination along the way.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">5</div>
+        <div class="body"><h3>Download &amp; combine</h3><p>Pulls each state-month's report and packages the full set into one organised file.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">6</div>
+        <div class="body"><h3>Check against Workflow 1</h3><p>Adds up this year's Mercedes-Benz and BMW figures month by month, per state, and checks that total against Workflow 1's own numbers for the same state — a second, independent cross-check.</p></div>
+      </div>
+      <div class="step output">
+        <div class="num">7</div>
+        <div class="body"><h3>Email the result</h3><p>Sends the packaged report and a pass/fail summary straight to the inbox as soon as the batch finishes.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="caps">
+    <p class="eyebrow">Built In</p>
+    <h2>What both workflows share</h2>
+    <p class="flow-desc">A handful of things run quietly underneath every batch, on every workflow.</p>
+    <div class="capgrid">
+      <div class="cap">
+        <h3>Automatic security check</h3>
+        <p>The portal's captcha is read and solved on its own at every step — no manual clicking required to keep a batch moving.</p>
+      </div>
+      <div class="cap">
+        <h3>Built-in accuracy check</h3>
+        <p>Totals are cross-checked before a batch is called complete, and anything that doesn't add up is flagged rather than quietly delivered.</p>
+      </div>
+      <div class="cap">
+        <h3>Automatic email summary</h3>
+        <p>A results email goes out the moment a batch finishes — no one has to remember to check in.</p>
+      </div>
+      <div class="cap">
+        <h3>Consistent file naming</h3>
+        <p>Every report follows the same naming pattern, so files never get mixed up or misfiled.</p>
+      </div>
+      <div class="cap">
+        <h3>Keeps going when something breaks</h3>
+        <p>A dropped connection or a failed step doesn't lose the whole batch — it recovers and carries on.</p>
+      </div>
+      <div class="cap">
+        <h3>Full run history</h3>
+        <p>Every batch is logged with a timestamp and a result, so any report can be traced back to exactly when and how it was produced.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>Prepared as a plain-language overview for review — implementation detail intentionally kept out of scope.</p>
+  </footer>
+
+</div>
